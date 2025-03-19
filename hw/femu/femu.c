@@ -546,7 +546,7 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     init_dram_backend(&n->mbe, bs_size);
     n->mbe->femu_mode = n->femu_mode;
 
-    n->completed = 0;`
+    n->completed = 0;
     n->start_time = time(NULL);
     n->reg_size = pow2ceil(0x1004 + 2 * (n->nr_io_queues + 1) * 4);
     n->ns_size = bs_size / (uint64_t)n->num_namespaces;
