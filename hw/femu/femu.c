@@ -546,7 +546,7 @@ static void femu_realize(PCIDevice *pci_dev, Error **errp)
     init_dram_backend(&n->mbe, bs_size);
     n->mbe->femu_mode = n->femu_mode;
 
-    n->completed = 0;
+    n->completed = 0;`
     n->start_time = time(NULL);
     n->reg_size = pow2ceil(0x1004 + 2 * (n->nr_io_queues + 1) * 4);
     n->ns_size = bs_size / (uint64_t)n->num_namespaces;
@@ -681,6 +681,7 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("ch_xfer_lat", FemuCtrl, bb_params.ch_xfer_lat, 0),
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
+    DEFINE_PROP_INT32("max_pe_cycles", FemuCtrl, bb_params.max_pe_cycles, 300),
     DEFINE_PROP_END_OF_LIST(),
 };
 

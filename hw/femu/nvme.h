@@ -1163,6 +1163,8 @@ typedef struct BbCtrlParams {
 
     int gc_thres_pcent;
     int gc_thres_pcent_high;
+
+    int max_pe_cycles; 
 } BbCtrlParams;
 
 typedef struct ZNSCtrlParams {

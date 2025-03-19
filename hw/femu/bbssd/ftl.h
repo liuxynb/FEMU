@@ -123,11 +123,11 @@ struct ssdparams {
                        * this defines the channel bandwith
                        */
 
-    double gc_thres_pcent;
-    int gc_thres_lines;
-    double gc_thres_pcent_high;
-    int gc_thres_lines_high;
-    bool enable_gc_delay;
+    double gc_thres_pcent; /* garbage collection threshold in percentage */
+    int gc_thres_lines; /* garbage collection threshold in lines */
+    double gc_thres_pcent_high; /* high garbage collection threshold in percentage */
+    int gc_thres_lines_high; /* high garbage collection threshold in lines */
+    bool enable_gc_delay; /* enable GC delay emulation */
 
     /* below are all calculated values */
     int secs_per_blk; /* # of sectors per block */
@@ -154,6 +154,10 @@ struct ssdparams {
     int tt_pls;       /* total # of planes in the SSD */
 
     int tt_luns;      /* total # of LUNs in the SSD */
+
+    int max_pe_cycles;  /* max program/erase cycles */
+    int pe_cycles_warn; /* warn program/erase cycles */
+    int pe_cycles_high; /* high program/erase cycles */
 };
 
 typedef struct line {
@@ -208,9 +212,19 @@ struct ssd {
     struct rte_ring **to_poller;
     bool *dataplane_started_ptr;
     QemuThread ftl_thread;
+
+    struct {
+        uint64_t total_pe_cycles;  /* SSD总P/E循环次数 */
+        int min_pe_cycles;         /* 最小P/E循环次数 */
+        int max_pe_cycles;         /* 最大P/E循环次数 */
+        double avg_pe_cycles;      /* 平均P/E循环次数 */
+        int worn_out_blocks;       /* 已磨损块数量 */
+    } pe_stat;
 };
 
 void ssd_init(FemuCtrl *n);
+
+#define FEMU_DEBUG_FTL
 
 #ifdef FEMU_DEBUG_FTL
 #define ftl_debug(fmt, ...) \

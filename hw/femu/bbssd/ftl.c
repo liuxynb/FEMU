@@ -1,6 +1,6 @@
 #include "ftl.h"
 
-//#define FEMU_DEBUG_FTL
+
 
 static void *ftl_thread(void *arg);
 
@@ -282,6 +282,10 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
     spp->gc_thres_lines_high = (int)((1 - spp->gc_thres_pcent_high) * spp->tt_lines);
     spp->enable_gc_delay = true;
 
+    // 初始化P/E循环相关参数
+    spp->max_pe_cycles = n->bb_params.max_pe_cycles; // 默认如30
+    spp->pe_cycles_warn = (int)(spp->max_pe_cycles * 0.8);
+    spp->pe_cycles_high = (int)(spp->max_pe_cycles * 0.95);
 
     check_params(spp);
 }
@@ -386,6 +390,13 @@ void ssd_init(FemuCtrl *n)
 
     /* initialize write pointer, this is how we allocate new pages for writes */
     ssd_init_write_pointer(ssd);
+
+    // 初始化P/E循环统计信息
+    ssd->pe_stat.total_pe_cycles = 0;
+    ssd->pe_stat.min_pe_cycles = 0;
+    ssd->pe_stat.max_pe_cycles = 0;
+    ssd->pe_stat.avg_pe_cycles = 0;
+    ssd->pe_stat.worn_out_blocks = 0;
 
     qemu_thread_create(&ssd->ftl_thread, "FEMU-FTL-Thread", ftl_thread, n,
                        QEMU_THREAD_JOINABLE);
@@ -612,6 +623,22 @@ static void mark_block_free(struct ssd *ssd, struct ppa *ppa)
     blk->ipc = 0;
     blk->vpc = 0;
     blk->erase_cnt++;
+
+    // 更新P/E循环统计信息
+    ssd->pe_stat.total_pe_cycles++;
+    
+    // 更新最大P/E循环次数
+    if (blk->erase_cnt > ssd->pe_stat.max_pe_cycles) {
+        ssd->pe_stat.max_pe_cycles = blk->erase_cnt;
+    }
+    
+    // 检查是否磨损
+    if (blk->erase_cnt >= spp->max_pe_cycles) {
+        ssd->pe_stat.worn_out_blocks++;
+        // 可以记录日志或采取其他措施
+        ftl_log("Block %d in ch:%d,lun:%d,pl:%d worn out (%d cycles)\n",
+                ppa->g.blk, ppa->g.ch, ppa->g.lun, ppa->g.pl, blk->erase_cnt);
+    }
 }
 
 static void gc_read_page(struct ssd *ssd, struct ppa *ppa)
@@ -858,6 +885,76 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
     return maxlat;
 }
 
+static void update_pe_cycles_stats(struct ssd *ssd)
+{
+    struct ssdparams *spp = &ssd->sp;
+    uint64_t total_pe_cycles = 0;
+    int min_pe_cycles = INT_MAX;
+    int max_pe_cycles = 0;
+    int worn_out_blocks = 0;
+    int total_blocks = 0;
+
+    for (int ch = 0; ch < spp->nchs; ch++) {
+        for (int lun = 0; lun < spp->luns_per_ch; lun++) {
+            for (int pl = 0; pl < spp->pls_per_lun; pl++) {
+                for (int blk = 0; blk < spp->blks_per_pl; blk++) {
+                    struct ppa ppa = {0};
+                    ppa.g.ch = ch;
+                    ppa.g.lun = lun;
+                    ppa.g.pl = pl;
+                    ppa.g.blk = blk;
+                    
+                    struct nand_block *blk_ptr = get_blk(ssd, &ppa);
+                    int erase_cnt = blk_ptr->erase_cnt;
+                    
+                    total_pe_cycles += erase_cnt;
+                    min_pe_cycles = (erase_cnt < min_pe_cycles) ? erase_cnt : min_pe_cycles;
+                    max_pe_cycles = (erase_cnt > max_pe_cycles) ? erase_cnt : max_pe_cycles;
+                    
+                    if (erase_cnt >= spp->max_pe_cycles) {
+                        worn_out_blocks++;
+                    }
+                    
+                    total_blocks++;
+                }
+            }
+        }
+    }
+
+    ssd->pe_stat.total_pe_cycles = total_pe_cycles;
+    ssd->pe_stat.min_pe_cycles = (min_pe_cycles == INT_MAX) ? 0 : min_pe_cycles;
+    ssd->pe_stat.max_pe_cycles = max_pe_cycles;
+    ssd->pe_stat.avg_pe_cycles = (double)total_pe_cycles / total_blocks;
+    ssd->pe_stat.worn_out_blocks = worn_out_blocks;
+    
+    ftl_log("P/E Stats: Avg=%.2f, Min=%d, Max=%d, Worn=%d/%d\n",
+            ssd->pe_stat.avg_pe_cycles, ssd->pe_stat.min_pe_cycles,
+            ssd->pe_stat.max_pe_cycles, worn_out_blocks, total_blocks);
+}
+
+int get_block_pe_cycles(struct ssd *ssd, struct ppa *ppa)
+{
+    struct nand_block *blk = get_blk(ssd, ppa);
+    return blk->erase_cnt;
+}
+
+bool is_block_worn_out(struct ssd *ssd, struct ppa *ppa)
+{
+    struct nand_block *blk = get_blk(ssd, ppa);
+    return blk->erase_cnt >= ssd->sp.max_pe_cycles;
+}
+
+void get_ssd_pe_stats(struct ssd *ssd, double *avg, int *min, int *max, int *worn_out)
+{
+    // 先更新统计信息
+    update_pe_cycles_stats(ssd);
+    
+    if (avg) *avg = ssd->pe_stat.avg_pe_cycles;
+    if (min) *min = ssd->pe_stat.min_pe_cycles;
+    if (max) *max = ssd->pe_stat.max_pe_cycles;
+    if (worn_out) *worn_out = ssd->pe_stat.worn_out_blocks;
+}
+
 static void *ftl_thread(void *arg)
 {
     FemuCtrl *n = (FemuCtrl *)arg;
@@ -897,7 +994,7 @@ static void *ftl_thread(void *arg)
                 lat = 0;
                 break;
             default:
-                //ftl_err("FTL received unkown request type, ERROR\n");
+                ftl_err("FTL received unkown request type, ERROR\n");
                 ;
             }
 
