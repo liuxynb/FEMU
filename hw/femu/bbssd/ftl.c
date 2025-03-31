@@ -769,9 +769,9 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
     struct line_mgmt *lm = &ssd->lm;
     struct line *victim_line = NULL;
     
-    // 每10次GC更新一次全局统计信息
+    // 每1000次GC更新一次全局统计信息
     static int gc_count = 0;
-    if (++gc_count >= 10) {
+    if (++gc_count >= 1000) {
         update_pe_cycles_stats(ssd);
         gc_count = 0;
     }
