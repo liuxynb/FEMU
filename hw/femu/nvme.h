@@ -1164,7 +1164,7 @@ typedef struct BbCtrlParams {
     int gc_thres_pcent;
     int gc_thres_pcent_high;
 
-    int max_pe_cycles; 
+    int max_pe_cycles;
 } BbCtrlParams;
 
 typedef struct ZNSCtrlParams {
@@ -1338,6 +1338,8 @@ typedef struct FemuCtrl {
     int64_t lpg_wr_lat_ns;
     int64_t blk_er_lat_ns;
     int64_t chnl_pg_xfer_lat_ns;
+
+    int ssd_num; // SSD number
 
     BbCtrlParams bb_params;
 

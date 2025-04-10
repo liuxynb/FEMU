@@ -682,6 +682,7 @@ static Property femu_props[] = {
     DEFINE_PROP_INT32("gc_thres_pcent", FemuCtrl, bb_params.gc_thres_pcent, 75),
     DEFINE_PROP_INT32("gc_thres_pcent_high", FemuCtrl, bb_params.gc_thres_pcent_high, 95),
     DEFINE_PROP_INT32("max_pe_cycles", FemuCtrl, bb_params.max_pe_cycles, 300),
+    DEFINE_PROP_INT32("ssd_num", FemuCtrl, ssd_num, 1),
     DEFINE_PROP_END_OF_LIST(),
 };
 

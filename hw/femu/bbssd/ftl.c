@@ -283,9 +283,13 @@ static void ssd_init_params(struct ssdparams *spp, FemuCtrl *n)
     spp->enable_gc_delay = true;
 
     // 初始化P/E循环相关参数
-    spp->max_pe_cycles = n->bb_params.max_pe_cycles; // 默认如30
+    spp->max_pe_cycles = n->bb_params.max_pe_cycles; // 默认如300
     spp->pe_cycles_warn = (int)(spp->max_pe_cycles * 0.8);
     spp->pe_cycles_high = (int)(spp->max_pe_cycles * 0.95);
+
+    // SSD编号
+    spp->ssd_num = n->ssd_num;
+    ftl_assert(spp->ssd_num > 0); // 确保SSD编号大于0
 
     check_params(spp);
 }
@@ -636,10 +640,8 @@ static void mark_block_free(struct ssd *ssd, struct ppa *ppa)
     if (blk->erase_cnt >= spp->max_pe_cycles) {
         ssd->pe_stat.worn_out_blocks++;
         // 可以记录日志或采取其他措施
-        /*
-        ftl_log("Block %d in ch:%d,lun:%d,pl:%d worn out (%d cycles)\n",
-                ppa->g.blk, ppa->g.ch, ppa->g.lun, ppa->g.pl, blk->erase_cnt); 
-        */
+        // ftl_log("Block %d in ch:%d,lun:%d,pl:%d worn out (%d cycles)\n",
+        //         ppa->g.blk, ppa->g.ch, ppa->g.lun, ppa->g.pl, blk->erase_cnt); 
     }
 }
 
@@ -736,9 +738,9 @@ static void update_pe_cycles_stats(struct ssd *ssd)
     ssd->pe_stat.avg_pe_cycles = (double)total_pe_cycles / total_blocks;
     ssd->pe_stat.worn_out_blocks = worn_out_blocks;
     
-    ftl_log("P/E Stats: Avg=%.2f, Min=%d, Max=%d, Worn=%d/%d\n",
-            ssd->pe_stat.avg_pe_cycles, ssd->pe_stat.min_pe_cycles,
-            ssd->pe_stat.max_pe_cycles, worn_out_blocks, total_blocks);
+    // ftl_log("P/E Stats: Avg=%.2f, Min=%d, Max=%d, Worn=%d/%d\n",
+    //         ssd->pe_stat.avg_pe_cycles, ssd->pe_stat.min_pe_cycles,
+    //         ssd->pe_stat.max_pe_cycles, worn_out_blocks, total_blocks);
 }
 
 static int get_block_pe_cycles(struct ssd *ssd, struct ppa *ppa)
@@ -769,12 +771,24 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
     struct line_mgmt *lm = &ssd->lm;
     struct line *victim_line = NULL;
     
-    // 每1000次GC更新一次全局统计信息
+    // 每10次GC更新一次全局统计信息
     static int gc_count = 0;
-    if (++gc_count >= 1000) {
+    if (++gc_count >= 10) {
         update_pe_cycles_stats(ssd);
         gc_count = 0;
     }
+
+    // // 每 10 秒 打印一次磨损统计信息
+    // static uint64_t last_print_time = 0;
+    // uint64_t current_time = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    // if (current_time - last_print_time >= 10 * 1000000000) {
+    //     double avg, min, max;
+    //     int worn_out;
+    //     get_ssd_pe_stats(ssd, &avg, &min, &max, &worn_out);
+    //     ftl_log("ssd_num=%d, Avg P/E Cycles=%.2f, Min=%d, Max=%d, Worn Out Blocks=%d\n",
+    //             ssd->sp.ssd_num, avg, min, max, worn_out);
+    //     last_print_time = current_time;
+    // }
 
     victim_line = pqueue_peek(lm->victim_line_pq);
     if (!victim_line) {
@@ -964,6 +978,26 @@ static uint64_t ssd_write(struct ssd *ssd, NvmeRequest *req)
     return maxlat;
 }
 
+// New log printing thread function
+static void *pec_log_thread(void *arg)
+{
+    struct ssd *ssd = (struct ssd *)arg;
+    
+    while (1) {
+        // Sleep for 120 seconds
+        sleep(120);
+        
+        // Print wear statistics
+        double avg, min, max;
+        int worn_out;
+        get_ssd_pe_stats(ssd, &avg, &min, &max, &worn_out);
+        ftl_log("SSD Num=%d, Avg P/E Cycles=%.2f, Worn Percentage=%.2f%%\n",
+                ssd->sp.ssd_num, avg, avg/ssd->sp.max_pe_cycles * 100);
+    }
+    
+    return NULL;
+}
+
 static void *ftl_thread(void *arg)
 {
     FemuCtrl *n = (FemuCtrl *)arg;
@@ -972,6 +1006,7 @@ static void *ftl_thread(void *arg)
     uint64_t lat = 0;
     int rc;
     int i;
+    pthread_t log_thread_id;
 
     while (!*(ssd->dataplane_started_ptr)) {
         usleep(100000);
@@ -980,6 +1015,16 @@ static void *ftl_thread(void *arg)
     /* FIXME: not safe, to handle ->to_ftl and ->to_poller gracefully */
     ssd->to_ftl = n->to_ftl;
     ssd->to_poller = n->to_poller;
+    
+    // Create the log printing thread
+    rc = pthread_create(&log_thread_id, NULL, pec_log_thread, (void *)ssd);
+    if (rc) {
+        ftl_err("Failed to create log printing thread, error: %d\n", rc);
+    } else {
+        // Make the thread detached so its resources are automatically released
+        pthread_detach(log_thread_id);
+        ftl_log("Log printing thread started successfully\n");
+    }
 
     while (1) {
         for (i = 1; i <= n->nr_pollers; i++) {
@@ -1020,6 +1065,7 @@ static void *ftl_thread(void *arg)
                 do_gc(ssd, false);
             }
         }
+        // Removed the time-based logging code from here since it's now in a separate thread
     }
 
     return NULL;

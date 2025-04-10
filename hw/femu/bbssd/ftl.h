@@ -158,6 +158,8 @@ struct ssdparams {
     int max_pe_cycles;  /* max program/erase cycles */
     int pe_cycles_warn; /* warn program/erase cycles */
     int pe_cycles_high; /* high program/erase cycles */
+
+    int ssd_num; /* SSD number */
 };
 
 typedef struct line {
