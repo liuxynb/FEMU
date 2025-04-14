@@ -984,8 +984,8 @@ static void *pec_log_thread(void *arg)
     struct ssd *ssd = (struct ssd *)arg;
     
     while (1) {
-        // Sleep for 120 seconds
-        sleep(120);
+        // Sleep for 300 seconds
+        sleep(300);
         
         // Print wear statistics
         double avg, min, max;
