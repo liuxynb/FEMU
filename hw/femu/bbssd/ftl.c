@@ -984,15 +984,15 @@ static void *pec_log_thread(void *arg)
     struct ssd *ssd = (struct ssd *)arg;
     
     while (1) {
-        // Sleep for 300 seconds
-        sleep(300);
+        // Sleep for 600 seconds
+        sleep(600);
         
         // Print wear statistics
         double avg, min, max;
         int worn_out;
         get_ssd_pe_stats(ssd, &avg, &min, &max, &worn_out);
-        ftl_log("SSD Num=%d, Avg P/E Cycles=%.2f, Worn Percentage=%.2f%%\n",
-                ssd->sp.ssd_num, avg, avg/ssd->sp.max_pe_cycles * 100);
+        ftl_log("SSD Num=%d, Avg P/E Cycles=%.2f, Worn Percentage=%.2f%%, Max P/E Cycles=%d\n",
+                ssd->sp.ssd_num, avg, avg/ssd->sp.max_pe_cycles * 100, ssd->sp.max_pe_cycles);
     }
     
     return NULL;
