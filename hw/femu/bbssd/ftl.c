@@ -771,9 +771,9 @@ static struct line *select_victim_line(struct ssd *ssd, bool force)
     struct line_mgmt *lm = &ssd->lm;
     struct line *victim_line = NULL;
     
-    // 每10次GC更新一次全局统计信息
+    // 每100次GC更新一次全局统计信息
     static int gc_count = 0;
-    if (++gc_count >= 10) {
+    if (++gc_count >= 100) {
         update_pe_cycles_stats(ssd);
         gc_count = 0;
     }
@@ -855,9 +855,9 @@ static int do_gc(struct ssd *ssd, bool force)
     }
 
     ppa.g.blk = victim_line->id;
-    ftl_debug("GC-ing line:%d,ipc=%d,victim=%d,full=%d,free=%d\n", ppa.g.blk,
-              victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
-              ssd->lm.free_line_cnt);
+    // ftl_debug("GC-ing line:%d,ipc=%d,victim=%d,full=%d,free=%d\n", ppa.g.blk,
+    //           victim_line->ipc, ssd->lm.victim_line_cnt, ssd->lm.full_line_cnt,
+    //           ssd->lm.free_line_cnt);
 
     /* copy back valid data */
     for (ch = 0; ch < spp->nchs; ch++) {
